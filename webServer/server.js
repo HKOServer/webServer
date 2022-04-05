@@ -45,6 +45,7 @@ app.use(express.static("./static"));
 
 app.get("/", (req, res) => {
     res.render("index.ejs", {
+        layout:'layouts/layout',
         account: req.session.account
     });
 });
@@ -135,6 +136,7 @@ app.get("/create", requiresLogin, (req, res) => {
         res.redirect("/manage");
     } else {
         res.render("create.ejs", {
+            layout:'layouts/layout',
             errors: []
         });
     }
@@ -153,6 +155,7 @@ app.post("/create",
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.render("create.ejs", {
+                layout:'layouts/layout',
                 errors: errors.array()
             });
         }
@@ -175,6 +178,7 @@ app.get("/manage", requiresLogin, (req, res) => {
         res.redirect("/create");
     } else {
         res.render("manage.ejs", {
+            layout:'layouts/layout',
             account: req.session.account,
             errors: []
         });
@@ -184,6 +188,7 @@ app.post("/manage/username", requiresLogin, body("username").isLength({ min: 4, 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.render("manage.ejs", {
+            layout:'layouts/layout',
             account: req.session.account,
             errors: errors.array()
         });
@@ -199,6 +204,7 @@ app.post("/manage/password", requiresLogin, body("password").isLength({ min: 6, 
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.render("manage.ejs", {
+            layout:'layouts/layout',
             account: req.session.account,
             errors: errors.array()
         });
@@ -211,6 +217,13 @@ app.post("/manage/password", requiresLogin, body("password").isLength({ min: 6, 
     asyncQuery(SQL`UPDATE account SET password = ${blob} WHERE id = ${BigInt(req.session.discord_info.id)}`);
     res.sendStatus(200);
 });
+
+app.get('*', function(req, res){
+    res.render('pages/404',{
+      layout:'layouts/layout'
+    })
+});
+
 //#endregion
 
 //#region Patching
