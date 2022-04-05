@@ -2,6 +2,7 @@ import config from "./config.js";
 import { asyncQuery, genSalt, hashPassword } from "./db.js";
 
 import express from "express";
+import partials from "express-partials";
 import session from "express-session";
 import ejs from "ejs";
 
@@ -11,6 +12,9 @@ import { body, validationResult } from "express-validator";
 
 //#region Setup
 let app = express();
+
+// load the express-partials middleware
+app.use(partials());
 
 app.engine("ejs", (path, data, cb) => {
     ejs.renderFile(path, data, {
