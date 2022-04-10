@@ -9,6 +9,10 @@ import SQL from 'sql-template-strings';
 import fetch from "node-fetch";
 import { body, validationResult } from "express-validator";
 
+import http from "http";
+import https from "https";
+import fs from "fs";
+
 //#region Setup
 let app = express();
 
@@ -60,11 +64,10 @@ app.get("/login", (req, res) => {
         `&response_type=code&scope=${encodeURIComponent(config.oauth2.scopes.join(" "))}`);
 });
 
-app.get("/login/callback", async (req, res) => {
+app.get("/login/callback", async (req, res, next) => {
     const accessCode = req.query.code;
     if (!accessCode) return res.redirect("/");
 
-    let token;
     try {
         const data = new URLSearchParams();
         data.append("client_id", config.oauth2.client_id);
@@ -74,39 +77,38 @@ app.get("/login/callback", async (req, res) => {
         data.append("scope", "identify");
         data.append("code", accessCode);
 
-        token = await (await fetch("https://discord.com/api/oauth2/token", {
+        const token = await (await fetch("https://discord.com/api/oauth2/token", {
             method: "POST",
             body: data
         })).json();
 
         if (token.error) {
-            console.error(token);
+            next(token);
             return;
         }
+
+        const userInfo = await (await fetch("https://discord.com/api/users/@me", {
+            headers: {
+                authorization: `${token.token_type} ${token.access_token}`,
+            },
+        })).json();
+
+        if (userInfo.code !== undefined) {
+            throw new Error(JSON.stringify(userInfo));
+        }
+
+        req.session.discord_info = userInfo;
+        req.session.bearer_token = token;
+
+        let account = await asyncQuery(SQL`SELECT username FROM account WHERE id = ${BigInt(userInfo.id)}`);
+        if (account.length == 0) {
+            res.redirect("/create");
+        } else {
+            req.session.account = account[0];
+            res.redirect("/manage");
+        }
     } catch (e) {
-        console.error(e);
-        res.sendStatus(500);
-        return;
-    }
-
-    const userInfo = await (await fetch("https://discord.com/api/users/@me", {
-        headers: {
-            authorization: `${token.token_type} ${token.access_token}`,
-        },
-    })).json();
-
-    req.session.discord_info = userInfo;
-    req.session.bearer_token = token;
-
-    let account = await asyncQuery(SQL`SELECT username FROM account WHERE id = ${BigInt(userInfo.id)}`);
-    req.session.account = account[0];
-
-    console.log(account);
-
-    if (!req.session.account) {
-        res.redirect("/create");
-    } else {
-        res.redirect("/manage");
+        next(e);
     }
 });
 
@@ -135,10 +137,9 @@ app.post("/create",
         .isLength({ min: 4, max: 64 }).withMessage("Username must be between 4 and 64 characters long")
         .matches(/^[0-9a-zA-Z.-]+$/).withMessage("Username can only contain the following characters:\n0-9a-zA-Z.-"),
     body("password").isLength({ min: 8, max: 32 }).withMessage("Password must be between 8 and 32 characters long"),
-    async (req, res) => {
+    async (req, res, next) => {
         if (req.session.account) {
-            res.redirect("/");
-            return;
+            return res.redirect("/");
         }
 
         const errors = validationResult(req);
@@ -148,25 +149,29 @@ app.post("/create",
             });
         }
 
-        let username = req.body.username.toLowerCase();
+        let username = req.body.username;
 
-        let exists = await asyncQuery(SQL`SELECT id FROM account WHERE username = ${username}`);
-        if (exists.length != 0) {
-            return res.render("pages/create.ejs", {
-                errors: [{
-                    msg: "Username already in use"
-                }]
-            });
+        try {
+            let exists = await asyncQuery(SQL`SELECT id FROM account WHERE username = ${username}`);
+            if (exists.length != 0) {
+                return res.render("pages/create.ejs", {
+                    errors: [{
+                        msg: "Username already in use"
+                    }]
+                });
+            }
+
+            let salt = genSalt();
+            let pass = hashPassword(req.body.password, salt);
+            let blob = Buffer.from([...salt, ...pass]);
+
+            await asyncQuery(SQL`INSERT INTO account (id, username, password) VALUES (${BigInt(req.session.discord_info.id)}, ${username}, ${blob})`);
+            req.session.account = { username };
+
+            res.redirect("/");
+        } catch (e) {
+            next(e);
         }
-
-        let salt = genSalt();
-        let pass = hashPassword(req.body.password, salt);
-        let blob = Buffer.from([...salt, ...pass]);
-
-        asyncQuery(SQL`INSERT INTO account (id, username, password) VALUES (${BigInt(req.session.discord_info.id)}, ${username}, ${blob})`);
-        req.session.account = { username };
-
-        res.redirect("/");
     }
 );
 
@@ -184,7 +189,7 @@ app.post("/manage/username", requiresLogin,
     body("username")
         .isLength({ min: 4, max: 64 }).withMessage("Username must be between 4 and 64 characters long")
         .matches(/^[0-9a-zA-Z.-]+$/).withMessage("Username can only contain the following characters:\n0-9a-zA-Z.-")
-    , async (req, res) => {
+    , async (req, res, next) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.render("pages/manage.ejs", {
@@ -193,9 +198,13 @@ app.post("/manage/username", requiresLogin,
             });
         }
 
-        let username = req.body.username.toLowerCase();
+        let username = req.body.username;
 
-        if (username !== req.session.account.username) {
+        if (username === req.session.account.username) {
+            return res.sendStatus(200);
+        }
+
+        try {
             let exists = await asyncQuery(SQL`SELECT id FROM account WHERE username = ${username}`);
             if (exists.length != 0) {
                 return res.render("pages/manage.ejs", {
@@ -206,11 +215,12 @@ app.post("/manage/username", requiresLogin,
                 });
             }
 
-            asyncQuery(SQL`UPDATE account SET username = ${username} WHERE id = ${BigInt(req.session.discord_info.id)}`);
+            await asyncQuery(SQL`UPDATE account SET username = ${username} WHERE id = ${BigInt(req.session.discord_info.id)}`);
             req.session.account.username = username;
+            res.sendStatus(200);
+        } catch (e) {
+            next(e);
         }
-
-        res.sendStatus(200);
     });
 
 app.post("/manage/password", requiresLogin,
@@ -237,7 +247,7 @@ app.post("/manage/password", requiresLogin,
 //#region Patching
 
 // get base urls
-app.get('/single/leading.txt', function (req, res) {
+app.get('/single/leading.txt', (req, res) => {
     res.send(
         `http://127.0.0.1/ver
 http://127.0.0.1/static
@@ -245,46 +255,82 @@ http://127.0.0.1/static`);
 });
 
 // get zips urls
-app.get('/ver/*', function (req, res) {
+app.get('/ver/*', (req, res, next) => {
     let type = req.params["0"].substr(12, 2);
     let id = req.params["0"].substr(0, 11);
 
-    const currentVersion = "v0109090002";
+    const currentVersion = "v0109090007";
 
     if (id != currentVersion) {
         if (type == "pc") {
-            if (id == "v0000000001") {
-                res.send(`v0000000002\ndata_0.tar`);
-            } else if (id == "v0000000002") {
-                res.send(`v0000000003\ndata_1.tar`);
-            } else if (id == "v0000000003") {
-                res.send(`v0000000004\ndata_2.tar`);
-            } else if (id == "v0000000004") {
+            if (id == "v0109090003") {
+                res.send(`v0109090004\ndata_0.tar`);
+            } else if (id == "v0109090004") {
+                res.send(`v0109090005\ndata_1.tar`);
+            } else if (id == "v0109090005") {
+                res.send(`v0109090006\ndata_2.tar`);
+            } else if (id == "v0109090006") {
                 res.send(`${currentVersion}\ndata_3.tar`);
             } else {
-                res.send(`v0000000001\ntables.tar`);
+                res.send(`v0109090003\ntables.tar`);
             }
         } else {
             res.send(`${currentVersion}`);
         }
     } else {
-        res.status(404).send("404 not found");
+        // forward to 404
+        next();
     }
 });
 
 //#endregion
 
 // Capture All 404 errors
-app.use(function (req, res, next) {
+app.use((req, res, next) => {
     res.status(404).render('pages/error.ejs', {
         status: 404,
         msg: "Page not found"
     });
 });
 
-let server = app.listen(80, function () {
-    let host = server.address().address
-    let port = server.address().port
+app.use((err, req, res, next) => {
+    console.error(err);
+    res.status(500);
 
-    console.log(`Listening at http://${host}:${port}`);
+    if (process.env.NODE_ENV === 'production') {
+        // We are running in production mode
+
+        res.render('pages/error.ejs', {
+            status: 500,
+            msg: "Internal Server Error"
+        });
+    } else {
+        // We are running in development mode
+
+        res.contentType("text/plain");
+        if (err instanceof Error) {
+            res.send(err.stack);
+        } else {
+            res.send(err);
+        }
+    }
+
+});
+
+// http redirect to https
+http.createServer((req, res) => {
+    res.statusCode = 302;
+    res.setHeader("Location", `https://${req.headers.host}${req.url}`);
+    res.end();
+}).listen(80);
+
+// https server
+let server = https.createServer({
+    key: fs.readFileSync(config.server.keyPath),
+    cert: fs.readFileSync(config.server.certPath),
+    passphrase: config.server.passphrase
+}, app).listen(443, () => {
+    let host = server.address();
+
+    console.log(`Listening at http://${host.address}:${host.port}`);
 });
