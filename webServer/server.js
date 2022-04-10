@@ -2,7 +2,6 @@ import config from "./config.js";
 import { asyncQuery, genSalt, hashPassword } from "./db.js";
 
 import express from "express";
-import partials from "express-partials";
 import session from "express-session";
 import ejs from "ejs";
 
@@ -13,39 +12,25 @@ import { body, validationResult } from "express-validator";
 //#region Setup
 let app = express();
 
-// load the express-partials middleware
-app.use(partials());
-
 app.engine("ejs", (path, data, cb) => {
-    ejs.renderFile(path, data, {
+    ejs.renderFile("./views/layouts/layout.ejs", {
+        body: path,
+        ...data
+    }, {
         cache: true
     }, cb);
 });
-app.set("views", "./views");
 //#endregion
 
 //#region pipeline
 app.use(express.urlencoded({ extended: true }));
-app.use(session({
-    secret: "aC3%nb3$5M4$7Su$",
-    cookie: {
-        maxAge: 7 * 24 * 60 * 60 * 1000
-    },
-    resave: false,
-    saveUninitialized: false
-}));
-
-app.use((req, res, next) => {
-    console.log(`${req.method} ${req.url} from ${req.socket.remoteAddress}`);
-    next();
-});
+app.use(session(config.session));
 //#endregion
 
 app.use(express.static("./static"));
 
 app.get("/", (req, res) => {
-    res.render("index.ejs", {
-        layout:'layouts/layout',
+    res.render("pages/index.ejs", {
         account: req.session.account
     });
 });
@@ -59,7 +44,10 @@ app.get("/", (req, res) => {
  */
 function requiresLogin(req, res, next) {
     if (!req.session.bearer_token) {
-        res.sendStatus(401);
+        res.status(401).render('pages/error.ejs', {
+            status: 401,
+            msg: "Unauthorized"
+        });
     } else {
         next();
     }
@@ -135,8 +123,7 @@ app.get("/create", requiresLogin, (req, res) => {
     if (req.session.account) {
         res.redirect("/manage");
     } else {
-        res.render("create.ejs", {
-            layout:'layouts/layout',
+        res.render("pages/create.ejs", {
             errors: []
         });
     }
@@ -144,9 +131,11 @@ app.get("/create", requiresLogin, (req, res) => {
 
 app.post("/create",
     requiresLogin,
-    body("username").isLength({ min: 4, max: 64 }).matches(/^[0-9a-zA-Z.-]+$/),
-    body("password").isLength({ min: 6, max: 32 }),
-    (req, res) => {
+    body("username")
+        .isLength({ min: 4, max: 64 }).withMessage("Username must be between 4 and 64 characters long")
+        .matches(/^[0-9a-zA-Z.-]+$/).withMessage("Username can only contain the following characters:\n0-9a-zA-Z.-"),
+    body("password").isLength({ min: 8, max: 32 }).withMessage("Password must be between 8 and 32 characters long"),
+    async (req, res) => {
         if (req.session.account) {
             res.redirect("/");
             return;
@@ -154,13 +143,21 @@ app.post("/create",
 
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.render("create.ejs", {
-                layout:'layouts/layout',
+            return res.render("pages/create.ejs", {
                 errors: errors.array()
             });
         }
 
         let username = req.body.username.toLowerCase();
+
+        let exists = await asyncQuery(SQL`SELECT id FROM account WHERE username = ${username}`);
+        if (exists.length != 0) {
+            return res.render("pages/create.ejs", {
+                errors: [{
+                    msg: "Username already in use"
+                }]
+            });
+        }
 
         let salt = genSalt();
         let pass = hashPassword(req.body.password, salt);
@@ -177,52 +174,63 @@ app.get("/manage", requiresLogin, (req, res) => {
     if (!req.session.account) {
         res.redirect("/create");
     } else {
-        res.render("manage.ejs", {
-            layout:'layouts/layout',
+        res.render("pages/manage.ejs", {
             account: req.session.account,
             errors: []
         });
     }
 });
-app.post("/manage/username", requiresLogin, body("username").isLength({ min: 4, max: 64 }).matches(/^[0-9a-zA-Z.-]+$/), (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.render("manage.ejs", {
-            layout:'layouts/layout',
-            account: req.session.account,
-            errors: errors.array()
-        });
-    }
+app.post("/manage/username", requiresLogin,
+    body("username")
+        .isLength({ min: 4, max: 64 }).withMessage("Username must be between 4 and 64 characters long")
+        .matches(/^[0-9a-zA-Z.-]+$/).withMessage("Username can only contain the following characters:\n0-9a-zA-Z.-")
+    , async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.render("pages/manage.ejs", {
+                account: req.session.account,
+                errors: errors.array()
+            });
+        }
 
-    let username = req.body.username.toLowerCase();
-    asyncQuery(SQL`UPDATE account SET username = ${username} WHERE id = ${BigInt(req.session.discord_info.id)}`);
-    req.session.account.username = username;
+        let username = req.body.username.toLowerCase();
 
-    res.sendStatus(200);
-});
-app.post("/manage/password", requiresLogin, body("password").isLength({ min: 6, max: 32 }), (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.render("manage.ejs", {
-            layout:'layouts/layout',
-            account: req.session.account,
-            errors: errors.array()
-        });
-    }
+        if (username !== req.session.account.username) {
+            let exists = await asyncQuery(SQL`SELECT id FROM account WHERE username = ${username}`);
+            if (exists.length != 0) {
+                return res.render("pages/manage.ejs", {
+                    account: req.session.account,
+                    errors: [{
+                        msg: "Username already in use"
+                    }]
+                });
+            }
 
-    let salt = genSalt();
-    let pass = hashPassword(req.body.password, salt);
-    let blob = Buffer.from([...salt, ...pass]);
+            asyncQuery(SQL`UPDATE account SET username = ${username} WHERE id = ${BigInt(req.session.discord_info.id)}`);
+            req.session.account.username = username;
+        }
 
-    asyncQuery(SQL`UPDATE account SET password = ${blob} WHERE id = ${BigInt(req.session.discord_info.id)}`);
-    res.sendStatus(200);
-});
+        res.sendStatus(200);
+    });
 
-app.get('*', function(req, res){
-    res.render('pages/404',{
-      layout:'layouts/layout'
-    })
-});
+app.post("/manage/password", requiresLogin,
+    body("password").isLength({ min: 6, max: 32 }).withMessage("Password must be between 8 and 32 characters long"),
+    (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.render("pages/manage.ejs", {
+                account: req.session.account,
+                errors: errors.array()
+            });
+        }
+
+        let salt = genSalt();
+        let pass = hashPassword(req.body.password, salt);
+        let blob = Buffer.from([...salt, ...pass]);
+
+        asyncQuery(SQL`UPDATE account SET password = ${blob} WHERE id = ${BigInt(req.session.discord_info.id)}`);
+        res.sendStatus(200);
+    });
 
 //#endregion
 
@@ -265,6 +273,14 @@ app.get('/ver/*', function (req, res) {
 });
 
 //#endregion
+
+// Capture All 404 errors
+app.use(function (req, res, next) {
+    res.status(404).render('pages/error.ejs', {
+        status: 404,
+        msg: "Page not found"
+    });
+});
 
 let server = app.listen(80, function () {
     let host = server.address().address

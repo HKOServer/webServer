@@ -11,5 +11,13 @@ export default {
         password: '',
         database: 'hko'
     },
+    session: {
+        secret: "",
+        cookie: {
+            maxAge: 7 * 24 * 60 * 60 * 1000
+        },
+        resave: false,
+        saveUninitialized: false
+    },
     cacheSize: 100
 };

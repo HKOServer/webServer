@@ -1,10 +1,7 @@
-<section>
-    <div class="container">
-        <% if(account) { %>
-            <button class="lgn-btn"><a href="/manage"> Manage login details</a></button>
-        <% } else { %>    
-            <button class="lgn-btn"><i class="fa-brands fa-discord"></i><a href="/login"> Login using discord</a></button>
-        <% } %>
-    </div>
-</section>
-      
+<div class="container">
+    <% if(account) { %>
+    <a class="lgn-btn" href="/manage">Manage login details</a>
+    <% } else { %>
+    <a class="lgn-btn" href="/login"><i class="fa-brands fa-discord"></i> Login using discord</a>
+    <% } %>
+</div>

@@ -1,19 +1,15 @@
-<section>
-    <div class="container">
-      <div class="create">
-        <form class="create__form">
-          <p class="title-create">Create Account:</p>
-          <% for(const error of errors) { %>
-            <p class="error"><%= error.param %>: <%= error.msg %></p>
-          <% } %>
-          <input type="text" name="username" placeholder="Username" autocomplete="username" minlength="4" maxlength="64" pattern="[a-zA-Z0-9.-]+" required>
-          <br>
-          <input type="password" name="password" placeholder="Password" autocomplete="new-password" minlength="6" maxlength="32" required>
-          <br>
-          <input class="create__submit" type="submit" value="SUBMIT">
+<div class="container">
+    <div class="create">
+        <form class="create__form" method="post" action="/create">
+            <p class="title-create">Create Account:</p>
+            <% for(const error of errors) { %>
+            <p class="input__error"><%= error.msg %></p>
+            <% } %>
+            <input type="text" name="username" placeholder="Username" autocomplete="username" minlength="4" maxlength="64" required>
+            <br>
+            <input type="password" name="password" placeholder="Password" autocomplete="new-password" minlength="8" maxlength="32" required>
+            <br>
+            <input class="create__submit" type="submit" value="SUBMIT">
         </form>
-      </div>
     </div>
-  </section>
-  
-        
+</div>

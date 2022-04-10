@@ -1,9 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
-  <%- include('../partials/head')-%>
-  <%- include('../partials/nav')-%>
-  <main>
-    <%- body %>
-  </main>
-  <%- include('../partials/footer')-%>
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Hello Kitty Online</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/brands.min.css" integrity="sha512-OivR4OdSsE1onDm/i3J3Hpsm5GmOVvr9r49K3jJ0dnsxVzZgaOJ5MfxEAxCyGrzWozL9uJGKz6un3A7L+redIQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+        <link rel="stylesheet" href="/styles/style.css">
+    </head>
+    <body>
+        <header>
+            <nav>
+                <a href="/" class="logo">HKO</a>
+            </nav>
+        </header>
+        <main>
+            <%- include(body) %>
+        </main>
+    </body>
 </html>

@@ -12,6 +12,10 @@ pool.on('error', (err) => {
     console.error(err);
 });
 
+/**
+ * @param {string} query 
+ * @returns {Promise<any[]>}
+ */
 export function asyncQuery(query) {
     return new Promise((resolve, reject) => {
         pool.query(query, (error, result, fields) => {

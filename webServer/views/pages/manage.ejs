@@ -1,21 +1,18 @@
-<section>
     <div class="container">
         <div class="manager">
             <p>Manage login info:</p>
             <% if(errors) for(const error of errors) { %>
-                <p class="error"><%= error.param %>: <%= error.msg %></p>
+            <p class="input__error"><%= error.msg %></p>
             <% } %>
             <form class="manager__form" method="post" action="/manage/username">
                 <label for="username">Username:</label><br>
-                <input type="text" name="username" autocomplete="username" placeholder="username" minlength="4" maxlength="64" pattern="[a-zA-Z0-9.-]+" required value="">
+                <input type="text" name="username" autocomplete="username" minlength="4" maxlength="64" required value="<%= account.username %>">
                 <input class="manager__submit" type="submit" value="Update">
             </form>
             <form class="manager__form" method="post" action="/manage/password">
-            <label for="password">Password:</label><br>
-                <input type="password" name="password" autocomplete="new-password" placeholder="password" minlength="6" maxlength="32" required value="">
+                <label for="password">Password:</label><br>
+                <input type="password" name="password" autocomplete="new-password" minlength="8" maxlength="32" required value="">
                 <input class="manager__submit" type="submit" value="Update">
             </form>
         </div>
     </div>
-</section>
-          
