@@ -244,47 +244,6 @@ app.post("/manage/password", requiresLogin,
 
 //#endregion
 
-//#region Patching
-
-// get base urls
-app.get('/single/leading.txt', (req, res) => {
-    res.send(
-        `http://127.0.0.1/ver
-http://127.0.0.1/static
-http://127.0.0.1/static`);
-});
-
-// get zips urls
-app.get('/ver/*', (req, res, next) => {
-    let type = req.params["0"].substr(12, 2);
-    let id = req.params["0"].substr(0, 11);
-
-    const currentVersion = "v0109090007";
-
-    if (id != currentVersion) {
-        if (type == "pc") {
-            if (id == "v0109090003") {
-                res.send(`v0109090004\ndata_0.tar`);
-            } else if (id == "v0109090004") {
-                res.send(`v0109090005\ndata_1.tar`);
-            } else if (id == "v0109090005") {
-                res.send(`v0109090006\ndata_2.tar`);
-            } else if (id == "v0109090006") {
-                res.send(`${currentVersion}\ndata_3.tar`);
-            } else {
-                res.send(`v0109090003\ntables.tar`);
-            }
-        } else {
-            res.send(`${currentVersion}`);
-        }
-    } else {
-        // forward to 404
-        next();
-    }
-});
-
-//#endregion
-
 // Capture All 404 errors
 app.use((req, res, next) => {
     res.status(404).render('pages/error.ejs', {
